@@ -1,0 +1,28 @@
+﻿"Phrases"
+{
+	"error invalid client"
+	{
+		"en"		"Error while sending a redirect box: Invalid Client"
+	}
+
+	"error empty ip field"
+	{
+		"en"		"Error while sending a redirect box: Empty IP Field"
+	}
+
+	"redirect box title"
+	{
+		"#format"	"{1:s}"	//1 = ip
+		"en"		"Would you like to connect to {1}?"
+	}
+
+	"yes"
+	{
+		"en"		"Yes"
+	}
+
+	"no"
+	{
+		"en"		"No"
+	}
+}
