@@ -3,7 +3,9 @@
 #endif
 #define _redirect_api_included
 
-native void RedirectPlayer(int client, char[] ip, float time, char[] password = "");
+native void RedirectPlayer(int client, char[] ip, float time = 30.0, char[] password = "");
+forward Action OnPlayerRedirect(int client, char[] ip, float time, char[] password);
+forward void OnPlayerRedirect_Post(int client, const char[] ip, float time, const char[] password);
 
 public SharedPlugin __pl_redirect_api = 
 {

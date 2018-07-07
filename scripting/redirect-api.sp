@@ -4,6 +4,11 @@
 
 //Sourcemod Includes
 #include <sourcemod>
+#include <redirect_api>
+
+//Globals
+Handle g_Forward_OnRedirect;
+Handle g_Forward_OnRedirect_Post;
 
 public Plugin myinfo = 
 {
@@ -18,12 +23,29 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 {
 	RegPluginLibrary("redirect-api");
 	CreateNative("RedirectPlayer", Native_RedirectPlayer);
+	g_Forward_OnRedirect = CreateGlobalForward("OnPlayerRedirect", ET_Event, Param_Cell, Param_String, Param_FloatByRef, Param_String);
+	g_Forward_OnRedirect_Post = CreateGlobalForward("OnPlayerRedirect_Post", ET_Ignore, Param_Cell, Param_String, Param_Float, Param_String);
 	return APLRes_Success;
 }
 
 public void OnPluginStart()
 {
 	LoadTranslations("redirectapi.phrases");
+
+	RegConsoleCmd("sm_redirect", Command_Redirect, "Redirect to another server based on the IP.");
+}
+
+public Action Command_Redirect(int client, int args)
+{
+	if (client == 0 || args == 0)
+		return Plugin_Handled;
+	
+	char sIP[64];
+	GetCmdArgString(sIP, sizeof(sIP));
+
+	RedirectPlayer(client, sIP);
+
+	return Plugin_Handled;
 }
 
 public int Native_RedirectPlayer(Handle plugin, int numParams)
@@ -52,6 +74,26 @@ public int Native_RedirectPlayer(Handle plugin, int numParams)
 
 	char[] sPassword = new char[size2 + 1];
 	GetNativeString(4, sPassword, size2 + 1);
+
+	PrintToChatAll("%N - %s - %.2f - %s", client, sIP, time, sPassword);
+
+	Call_StartForward(g_Forward_OnRedirect);
+	Call_PushCell(client);
+	Call_PushStringEx(sIP, size1, SM_PARAM_STRING_COPY, SM_PARAM_COPYBACK);
+	Call_PushFloatRef(time);
+	Call_PushStringEx(sPassword, size2, SM_PARAM_STRING_COPY, SM_PARAM_COPYBACK);
+
+	PrintToChatAll("2 %N - %s - %.2f - %s", client, sIP, time, sPassword);
+	
+	int code; Action result;
+	if ((code = Call_Finish(result)) != SP_ERROR_NONE)
+	{
+		LogError("Error while generating pre-forward on redirect. [Code: %i]", code);
+		return 0;
+	}
+
+	if (result > Plugin_Changed)
+		return 0;
 
 	//If non-TF2, just use the regular function.
 	if (GetEngineVersion() != Engine_TF2)
@@ -108,8 +150,11 @@ public void QueryClientConVar_ShowPluginMessages(QueryCookie cookie, int client,
 	FormatEx(sDisplay, sizeof(sDisplay), "%T", "no", client);
 	menu.AddItem("No", sDisplay);
 	
-	PushMenuCell(menu, "size", size1);
+	PushMenuFloat(menu, "time", time);
+	PushMenuCell(menu, "size1", size1);
 	PushMenuString(menu, "ip", sIP);
+	PushMenuCell(menu, "size2", size2);
+	PushMenuString(menu, "password", sPassword);
 	
 	menu.Display(client, RoundFloat(time));
 }
@@ -125,17 +170,41 @@ public int MenuHandler_AskConnect(Menu menu, MenuAction action, int param1, int 
 
 			if (StrEqual(sInfo, "No"))
 				return;
-			
-			int size = GetMenuCell(menu, "size");
 
-			char[] sIP = new char[size + 1];
-			GetMenuString(menu, "ip", sIP, size + 1);
+			float time = GetMenuFloat(menu, "time");
+			
+			int size1 = GetMenuCell(menu, "size1");
+
+			char[] sIP = new char[size1 + 1];
+			GetMenuString(menu, "ip", sIP, size1 + 1);
+
+			int size2 = GetMenuCell(menu, "size2");
+
+			char[] sPassword = new char[size2 + 1];
+			GetMenuString(menu, "password", sPassword, size2 + 1);
+
+			Call_StartForward(g_Forward_OnRedirect_Post);
+			Call_PushCell(param1);
+			Call_PushString(sIP);
+			Call_PushFloat(time);
+			Call_PushString(sPassword);
+			Call_Finish();
 
 			ClientCommand(param1, "redirect %s", sIP);
 		}
 		case MenuAction_End:
 			delete menu;
 	}
+}
+
+public Action OnPlayerRedirect(int client, char[] ip, float time, char[] password)
+{
+	//PrintToServer("client: %N - ip: %s - time: %.2f - password: %s", client, ip, time, password);
+}
+
+public void OnPlayerRedirect_Post(int client, const char[] ip, float time, const char[] password)
+{
+	//PrintToServer("client: %N - post-ip: %s - time: %.2f - password: %s", client, ip, time, password);
 }
 
 bool PushMenuString(Menu pMenu, const char[] pId, const char[] pValue)
@@ -153,6 +222,16 @@ bool PushMenuCell(Menu pMenu, const char[] pId, int pValue)
 	
 	char sBuffer[128];
 	IntToString(pValue, sBuffer, sizeof(sBuffer));
+	return pMenu.AddItem(pId, sBuffer, ITEMDRAW_IGNORE);
+}
+
+bool PushMenuFloat(Menu pMenu, const char[] pId, float pValue)
+{
+	if (pMenu == null || strlen(pId) == 0)
+		return false;
+	
+	char sBuffer[128];
+	FloatToString(pValue, sBuffer, sizeof(sBuffer));
 	return pMenu.AddItem(pId, sBuffer, ITEMDRAW_IGNORE);
 }
 
@@ -184,6 +263,21 @@ int GetMenuCell(Menu pMenu, const char[] pId, int pDefaultValue = 0)
 	{
 		if (pMenu.GetItem(i, info, sizeof(info), _, data, sizeof(data)) && StrEqual(info, pId))
 			return StringToInt(data);
+	}
+	
+	return pDefaultValue;
+}
+
+float GetMenuFloat(Menu pMenu, const char[] pId, float pDefaultValue = 0.0)
+{
+	if (pMenu == null || strlen(pId) == 0)
+		return pDefaultValue;
+		
+	char info[128]; char data[128];
+	for (int i = 0; i < pMenu.ItemCount; i++)
+	{
+		if (pMenu.GetItem(i, info, sizeof(info), _, data, sizeof(data)) && StrEqual(info, pId))
+			return StringToFloat(data);
 	}
 	
 	return pDefaultValue;
